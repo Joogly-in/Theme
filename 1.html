@@ -95,7 +95,7 @@
 /* ---------------- URL PARAMS ---------------- */
 function getParam(k,d=""){ try{return decodeURIComponent(new URL(location.href).searchParams.get(k)||d);}catch(_){return d;} }
 
-const msgParam  = getParam("message","Happy Birthday");
+const msgParam  = getParam("message","Rashi Pagl h");
 const nameParam = getParam("name","");
 const dateParam = getParam("date","");
 
@@ -301,4 +301,5 @@ requestAnimationFrame(tick);
 
 </body>
 </html>
+
 
