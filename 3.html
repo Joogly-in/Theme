@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pastel Spiral Gift — Letter Reveal</title>
+<style>
+  :root{
+    --pastel-1:#ffd6e7; --pastel-2:#e6f7ff; --pastel-3:#fff2d6; --pastel-4:#eaf8e6; --pastel-5:#f0e7ff;
+    --card-radius:18px; --shadow:0 10px 30px rgba(0,0,0,0.08);
+    --ui-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Color Emoji";
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(135deg,var(--pastel-1),var(--pastel-2) 35%,var(--pastel-5) 70%);font-family:var(--ui-font);-webkit-font-smoothing:antialiased;}
+  canvas{display:block; width:100vw; height:100vh;}
+  .center-ui{
+    position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:45;
+    display:flex;flex-direction:column;align-items:center;gap:12px;
+    pointer-events:none;
+  }
+  .title-card{
+    background:rgba(255,255,255,0.9);padding:14px 22px;border-radius:var(--card-radius);box-shadow:var(--shadow);
+    text-align:center; min-width:260px; pointer-events:auto; cursor:default;
+  }
+  .title-card h1{margin:0;font-size:clamp(18px,3.6vw,34px);font-weight:800;color:#222;}
+  .title-card p{margin:6px 0 0 0;color:#555;font-size:13px;}
+  /* gift box container */
+  .box-wrap{width:160px;height:160px;display:flex;align-items:center;justify-content:center;pointer-events:auto;}
+  .gift-btn{width:160px;height:160px;cursor:pointer;transform-origin:50% 50%;}
+  .hint{font-size:12px;color:#555;opacity:0.9;margin-top:6px;}
+  @media(max-width:420px){ .box-wrap{width:120px;height:120px;} .gift-btn{width:120px;height:120px;} }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="center-ui" aria-hidden="false">
+  <div class="title-card" role="region" aria-label="Birthday title" id="card">
+    <h1 id="title">Happy Birthday</h1>
+    <p id="subtitle">Click the gift to open ✨</p>
+  </div>
+
+  <div class="box-wrap">
+    <!-- SVG gift box (lid is separate group to rotate open) -->
+    <svg class="gift-btn" id="gift" viewBox="0 0 200 200" aria-label="Gift box" role="button">
+      <defs>
+        <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#FFF2D6"/><stop offset="1" stop-color="#FFD6E7"/></linearGradient>
+        <linearGradient id="g2" x1="0" x2="1"><stop offset="0" stop-color="#E6F7FF"/><stop offset="1" stop-color="#EAF8E6"/></linearGradient>
+      </defs>
+
+      <!-- base of box -->
+      <rect x="30" y="70" width="140" height="90" rx="8" fill="url(#g1)" stroke="rgba(0,0,0,0.06)" />
+      <!-- ribbon vertical -->
+      <rect x="95" y="70" width="10" height="90" fill="#F7A8D8" />
+      <!-- ribbon horizontal -->
+      <rect x="30" y="110" width="140" height="12" fill="#F7A8D8" rx="6" />
+      <!-- bow center -->
+      <g id="bow" transform="translate(100,98)">
+        <path d="M0,0 C-18,-12 -36,-18 -30,-28 C-18,-44 4,-34 0,-18 Z" fill="#FFB3D6" transform="rotate(-18)"/>
+        <path d="M0,0 C18,-12 36,-18 30,-28 C18,-44 -4,-34 0,-18 Z" fill="#FFB3D6" transform="rotate(18)"/>
+        <circle r="7" fill="#fff"/>
+      </g>
+
+      <!-- lid group (will rotate open) -->
+      <g id="lid" transform="translate(100,80)">
+        <rect x="-86" y="-36" width="172" height="60" rx="8" fill="url(#g2)" stroke="rgba(0,0,0,0.05)"/>
+        <!-- top ribbon stripe on lid -->
+        <rect x="-8" y="-36" width="16" height="60" fill="#F7A8D8"/>
+      </g>
+
+      <!-- subtle shine -->
+      <ellipse cx="80" cy="120" rx="40" ry="18" fill="rgba(255,255,255,0.14)"/>
+    </svg>
+  </div>
+  <div class="hint">Click gift or anywhere to open • Click again to reset</div>
+</div>
+
+<script>
+/* ---------- URL PARAMS (message + name combined) ---------- */
+function getParam(k,d=""){ try{return decodeURIComponent(new URL(location.href).searchParams.get(k)||d);}catch(_){return d;} }
+const msgParam  = getParam("message","Happy Birthday");
+const nameParam = getParam("name","Rashi");
+const dateParam = getParam("date","");
+const fullMessage = (msgParam + (nameParam ? " " + nameParam : "")).trim();
+
+document.getElementById("title").textContent = msgParam;
+if(dateParam){ const dt=new Date(dateParam); document.getElementById("subtitle").textContent = isNaN(dt)?dateParam:dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+
+/* ---------- canvas spiral background & particles ---------- */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W = innerWidth, H = innerHeight, DPR = Math.max(1, devicePixelRatio||1);
+function resize(){
+  W = innerWidth; H = innerHeight; DPR = Math.max(1, devicePixelRatio||1);
+  canvas.width = Math.round(W*DPR); canvas.height = Math.round(H*DPR);
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener('resize', resize);
+resize();
+
+/* config */
+const pastel = ["#FFD6E7","#E6F7FF","#FFF2D6","#EAF8E6","#F0E7FF"];
+const emojis = ["🎉","🎂","🎈","🎁","💖","✨","🥳","🌸","🍰"];
+let bgStreams = []; // gentle background streams
+let particles = []; // confetti/emojis
+let letters = []; // letter particles emitted one by one
+
+function rand(a,b){return a+Math.random()*(b-a);}
+
+/* spawn subtle background stream */
+function spawnBackgroundStream(){
+  const s = {
+    angle: rand(0,Math.PI*2),
+    radius: 0,
+    radialSpeed: rand(10,40),
+    angularSpeed: rand(-0.8,0.8),
+    color: pastel[Math.floor(Math.random()*pastel.length)],
+    chars: (fullMessage||"HAPPY BIRTHDAY").toUpperCase().split('').filter(()=>Math.random()>0.3),
+    life: rand(8,18), born: performance.now()
+  };
+  bgStreams.push(s);
+}
+
+/* emit confetti/emojis from center (used with lid open) */
+function emitFromCenter(amount=24){
+  const cx = W/2, cy = H/2;
+  for(let i=0;i<amount;i++){
+    const isEmoji = Math.random() < 0.28;
+    particles.push({
+      x: cx, y: cy,
+      r: rand(4,12),
+      radius: rand(2,18),
+      angle: rand(0,Math.PI*2),
+      radialSpeed: rand(120,420) * (0.8 + Math.random()*0.8),
+      angularSpeed: rand(-3,3) * (0.2 + Math.random()*0.7),
+      life: rand(1.6,2.8),
+      born: performance.now(),
+      color: pastel[Math.floor(Math.random()*pastel.length)],
+      emoji: isEmoji ? emojis[Math.floor(Math.random()*emojis.length)] : null,
+      rotation: rand(0,Math.PI*2),
+      spin: rand(-6,6)
+    });
+  }
+}
+
+/* create a letter particle that moves out smoothly and eases into a position */
+function emitLettersSequentially(message, delay=80, spread=14){
+  // message: string, delay in ms between letters
+  // spread: final offset distance from center in px
+  const chars = message.split('');
+  // centre start
+  const cx = W/2, cy = H/2;
+  // compute final arrangement: spread letters along an arc or slight spiral for aesthetics
+  const mid = (chars.length-1)/2;
+  for(let i=0;i<chars.length;i++){
+    const ch = chars[i];
+    if(ch === " ") {
+      // still create a small timing gap (no visible letter)
+      // we still increment timer so spacing is preserved
+    }
+    // schedule emission with timeout
+    ((charIndex, char)=>{
+      setTimeout(()=>{
+        if(!char) return;
+        // angle distribution around -90deg (upwards) plus small offset
+        const baseAngle = -Math.PI/2; // upward
+        const offset = (charIndex - mid) * 0.18; // horizontal spread
+        const theta = baseAngle + offset + rand(-0.06,0.06);
+        const finalRadius = spread + Math.abs(charIndex - mid) * 6 + rand(-3,3);
+        // letter particle with easing states
+        letters.push({
+          char,
+          born: performance.now(),
+          life: 4000, // not used to remove; letters persist but can fade later
+          // start polar motion
+          r: 10 + rand(-6,6), // start slightly from center
+          angle: theta,
+          radialSpeed: rand(160,340), // how fast they move outward initially
+          angularSpeed: rand(-1.2,1.2) * 0.35,
+          // final resting position (polar offset)
+          finalR: finalRadius + rand(-6,6),
+          finalAngleOffset: rand(-0.04,0.04),
+          // visual
+          alpha: 0,
+          scale: 0.6 + Math.random()*0.5,
+          color: pastel[(i + Math.floor(Math.random()*pastel.length)) % pastel.length],
+          settled: false,
+          settleStart: 0
+        });
+      }, delay * charIndex);
+    })(i, chars[i]);
+  }
+}
+
+/* draw loop */
+let last = performance.now();
+function tick(now){
+  const dt = Math.min(0.05,(now-last)/1000);
+  last = now;
+
+  // soft white fade so pastels blend into gentle trails
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(0,0,W,H);
+
+  // background streams
+  for(let i = bgStreams.length-1; i>=0; i--){
+    const s = bgStreams[i];
+    const age = (now - s.born)/1000;
+    if(age > s.life){ bgStreams.splice(i,1); continue; }
+    s.radius += s.radialSpeed * dt;
+    s.angle += s.angularSpeed * dt;
+
+    ctx.save();
+    ctx.globalAlpha = 0.75 * (1 - age/s.life);
+    ctx.font = '18px system-ui';
+    ctx.fillStyle = s.color;
+    for(let k=0;k<s.chars.length;k++){
+      const r = s.radius + k * 18;
+      const theta = s.angle + k * 0.08;
+      const x = Math.round(W/2 + r * Math.cos(theta));
+      const y = Math.round(H/2 + r * Math.sin(theta));
+      ctx.fillText(s.chars[k], x + Math.sin((r+theta)*0.03)*2, y);
+    }
+    ctx.restore();
+  }
+
+  // update particles (confetti/emojis)
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    const age = (now - p.born)/1000;
+    if(age > p.life){ particles.splice(i,1); continue; }
+    p.radius += p.radialSpeed * dt;
+    p.angle += p.angularSpeed * dt;
+    p.rotation += p.spin * dt;
+    p.x = W/2 + p.radius * Math.cos(p.angle);
+    p.y = H/2 + p.radius * Math.sin(p.angle);
+    p.y += 14 * dt * (age / p.life);
+
+    ctx.save();
+    ctx.globalAlpha = 0.98 * (1 - age/p.life);
+    if(p.emoji){
+      ctx.font = `${Math.round(p.r*2.2)}px "Segoe UI Emoji","Apple Color Emoji"`;
+      ctx.fillText(p.emoji, p.x, p.y);
+    } else {
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.r/2, -p.r/2, p.r, p.r*0.6);
+    }
+    ctx.restore();
+  }
+
+  // update letters (the core feature)
+  for(let i=letters.length-1;i>=0;i--){
+    const L = letters[i];
+    // initial outward movement until near finalR, then ease to a settling orbit
+    const dtms = dt * 1000;
+    // if not yet settled, move radially outward
+    if(!L.settled){
+      // approach final radius using radialSpeed (decelerate)
+      const dr = L.radialSpeed * dt;
+      L.r += dr;
+      L.angle += L.angularSpeed * dt;
+
+      // alpha & scale ease in
+      L.alpha = Math.min(1, L.alpha + 3*dt);
+      L.scale = Math.min(1, L.scale + 1.4*dt);
+
+      // when passing finalR threshold, start settling
+      if(L.r >= L.finalR - 2 || L.r > Math.max(W,H)/2 - 20){
+        L.settled = true;
+        L.settleStart = performance.now();
+        // record resting polar coords as base
+        L.baseR = L.finalR;
+        L.baseAngle = L.angle + L.finalAngleOffset;
+        L.orbitRadius = 6 + Math.random()*12; // small float radius around base
+        L.orbitSpeed = rand(-0.8,0.8) * 0.8;
+      }
+    } else {
+      // settled: orbit gently around base position, slight floating up/down
+      const t = (performance.now() - L.settleStart)/1000;
+      const wobble = Math.sin(t * 1.2 + i) * (L.orbitRadius * 0.5);
+      L.angle = L.baseAngle + Math.sin(t * L.orbitSpeed) * 0.06;
+      // slowly reduce radial if any overshoot
+      L.r += (L.baseR - L.r) * 0.08;
+      // subtle alpha pulsing
+      L.alpha = 0.92 + 0.06 * Math.sin(t*0.9 + i);
+      // keep scale near 1
+      L.scale += (1 - L.scale) * 0.08;
+      // compute cartesian with wobble on radial
+      const rr = L.r + wobble * 0.9;
+      L.x = Math.round(W/2 + rr * Math.cos(L.angle));
+      L.y = Math.round(H/2 + rr * Math.sin(L.angle));
+    }
+
+    // if not yet set x/y (during initial move), compute from polar
+    if(!L.x || !L.y){
+      L.x = Math.round(W/2 + L.r * Math.cos(L.angle));
+      L.y = Math.round(H/2 + L.r * Math.sin(L.angle));
+    }
+
+    // draw letter
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.02, L.alpha);
+    const fontSize = Math.round(28 * L.scale);
+    ctx.font = `${fontSize}px system-ui, 'Segoe UI'`;
+    ctx.fillStyle = L.color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // slight rotation for charm
+    const rot = (Math.sin((L.r + L.angle)*0.06 + i) * 0.08) * (1 - (L.scale - 0.6));
+    ctx.translate(L.x, L.y);
+    ctx.rotate(rot);
+    ctx.fillText(L.char, 0, 0);
+    ctx.restore();
+  }
+
+  // occasionally spawn gentle background stream
+  if(Math.random() < 0.026 && bgStreams.length < 10) spawnBackgroundStream();
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---------- gift open animation & interactions (lid) ---------- */
+const gift = document.getElementById('gift');
+const lid = document.getElementById('lid');
+let openProgress = 0; // 0 closed -> 1 open
+let animState = 'closed'; // 'closed' | 'opening' | 'open' | 'closing'
+let lidAnimStart = 0;
+const lidDuration = 700; // ms
+let letterTimeouts = []; // to handle scheduled letter emits
+
+function setLidTransform(p){
+  const maxDeg = -70; // degrees to rotate
+  const deg = maxDeg * p;
+  const ty = -12 * p;
+  lid.setAttribute('transform', `translate(100,80) rotate(${deg}) translate(0,${ty})`);
+}
+
+function animateLid(now){
+  if(animState === 'opening'){
+    const t = Math.min(1, (now - lidAnimStart)/lidDuration);
+    openProgress = easeOutBack(t);
+    setLidTransform(openProgress);
+    if(t>=1){
+      animState = 'open';
+      // when open, emit confetti and letters sequentially
+      emitFromCenter(12 + Math.floor(Math.random()*18));
+      // clear any previous letters/timeouts then emit
+      letters = []; // remove prior letters to reveal fresh
+      for(const to of letterTimeouts) clearTimeout(to);
+      letterTimeouts = [];
+      // Start emitting letters of fullMessage with 90ms gap
+      const gap = 90;
+      for(let i=0;i<fullMessage.length;i++){
+        const ch = fullMessage[i];
+        const to = setTimeout(()=>{
+          if(ch === " "){
+            // add a small invisible spacer (no letter) but small pop confetti occasionally
+            if(Math.random() < 0.28) emitFromCenter(2);
+            return;
+          }
+          // direct push single-letter particle (same emitter mechanism used earlier)
+          const cx = W/2, cy = H/2;
+          const mid = (fullMessage.length-1)/2;
+          const offset = (i - mid) * 0.18;
+          const theta = -Math.PI/2 + offset + rand(-0.06,0.06);
+          const finalRadius = 60 + Math.abs(i - mid) * 10 + rand(-6,6);
+          letters.push({
+            char: ch,
+            born: performance.now(),
+            life: 4000,
+            r: 12 + rand(-6,6),
+            angle: theta,
+            radialSpeed: rand(180,340),
+            angularSpeed: rand(-1.2,1.2) * 0.35,
+            finalR: finalRadius,
+            finalAngleOffset: rand(-0.04,0.04),
+            alpha: 0,
+            scale: 0.6 + Math.random()*0.45,
+            color: pastel[(i + Math.floor(Math.random()*pastel.length)) % pastel.length],
+            settled: false,
+            settleStart: 0
+          });
+          // small burst when a vowel or every few chars
+          if(/[AEIOUaeiou]/.test(ch) || i%6===0) emitFromCenter(2 + Math.floor(Math.random()*3));
+        }, gap * i);
+        letterTimeouts.push(to);
+      }
+    }
+  } else if(animState === 'closing'){
+    const t = Math.min(1, (now - lidAnimStart)/lidDuration);
+    openProgress = 1 - easeOutBack(t);
+    setLidTransform(openProgress);
+    if(t>=1){
+      animState = 'closed';
+      // on closing, clear letters and small reset
+      for(const to of letterTimeouts) clearTimeout(to);
+      letterTimeouts = [];
+      letters = [];
+    }
+  }
+  requestAnimationFrame(animateLid);
+}
+requestAnimationFrame(animateLid);
+
+function easeOutBack(t){ const c1=1.70158; const c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); }
+
+function triggerToggle(){
+  if(animState === 'closed'){
+    animState = 'opening';
+    lidAnimStart = performance.now();
+  } else if(animState === 'open'){
+    animState = 'closing';
+    lidAnimStart = performance.now();
+  } else if(animState === 'opening' || animState === 'closing'){
+    const now = performance.now();
+    const elapsed = now - lidAnimStart;
+    const remaining = lidDuration - elapsed;
+    lidAnimStart = now - remaining;
+    animState = (animState === 'opening') ? 'closing' : 'opening';
+  }
+  // also pop a tiny burst
+  emitFromCenter(6 + Math.floor(Math.random()*8));
+}
+
+gift.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  triggerToggle();
+});
+document.body.addEventListener('click', ()=> triggerToggle());
+
+/* keyboard reset: press r to reset immediately */
+document.addEventListener('keydown',(e)=>{ if(e.key==='r'){ particles=[]; bgStreams=[]; letters=[]; for(const to of letterTimeouts) clearTimeout(to); letterTimeouts=[]; openProgress=0; animState='closed'; setLidTransform(0);} });
+
+/* initial closed lid */
+setLidTransform(0);
+
+/* small initial background streams */
+for(let i=0;i<3;i++) spawnBackgroundStream();
+
+/* subtle recurring sparkle when open */
+setInterval(()=>{ if(animState==='open') emitFromCenter(3 + Math.floor(Math.random()*4)); }, 1200);
+</script>
+
+</body>
+</html>

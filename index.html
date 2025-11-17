@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Matrix Birthday – Crisp and Clear</title>
+
+<style>
+  html,body{
+    height:100%; margin:0; background:#000; overflow:hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Color Emoji";
+  }
+  canvas{display:block; width:100vw; height:100vh;}
+
+  .center-panel{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+    background: rgba(0,0,0,0.85);
+    color:#fff; padding:16px 24px; border-radius:14px;
+    text-align:center; z-index:30;
+    box-shadow:0 8px 26px rgba(0,0,0,0.7); min-width:280px;
+  }
+  .center-panel h1{ margin:0; font-size:clamp(22px,4vw,38px); font-weight:800; }
+  .center-panel p{ margin:8px 0 0 0; font-size:14px; opacity:0.9; }
+
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="center-panel" id="centerPanel">
+  <h1 id="title">Happy Birthday</h1>
+  <p id="subtitle">Make a wish ✨</p>
+</div>
+
+<script>
+/* ---------------- URL PARAMS ---------------- */
+function getParam(k,d=""){ try{return decodeURIComponent(new URL(location.href).searchParams.get(k)||d);}catch(_){return d;} }
+
+const msgParam  = getParam("message","Happy Birthday");
+const nameParam = getParam("name","");
+const dateParam = getParam("date","");
+
+const titleEl = document.getElementById("title");
+const subtitleEl = document.getElementById("subtitle");
+
+titleEl.textContent = msgParam + (nameParam ? " " + nameParam : "");
+
+if(dateParam){
+  const dt = new Date(dateParam);
+  subtitleEl.textContent = isNaN(dt) ? dateParam : dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+}
+
+/* ---------------- CANVAS CONFIG ---------------- */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+// Variables W, H, DPR are declared once globally here
+let W = innerWidth, H = innerHeight;
+let DPR = Math.max(1, devicePixelRatio || 1);
+
+/* Configuration for Crisp Text and Short Trails */
+const cfg = {
+  columnSpacing: 48,
+  baseFont: 28,
+  lineHeight: 34,
+  speedRange: [70, 110],
+
+  /* 🔹 INCREASED significantly (from 0.006) for a much shorter, clearer trail */
+  trailAlpha: 0.3, 
+
+  /* 🔹 REDUCED from 3 for a sharper, less fuzzy character appearance */
+  glowBlur: 1,
+  glowColor: "rgba(0,255,140,0.08)",
+
+  emojiChance: 0.12,
+  maxStreamsPerCol: 2,
+  spawnMin: 0.32,
+  spawnMax: 0.9
+};
+
+const emojis = ["🎉","🎂","🎈","🎁","❤️","😊","✨","🥳"];
+
+const nameUpper = nameParam ? nameParam.toUpperCase().replace(/\s+/g,"") : "";
+
+const words = [
+  "HAPPY",
+  "",
+  "BIRTHDAY",
+  "",
+  nameUpper
+];
+
+/* ---------------- RESIZE ---------------- */
+let columns = [];
+
+function resize(){
+  // Reassigning global variables (W, H, DPR) without 'let' to avoid redeclaration error
+  W = innerWidth; 
+  H = innerHeight;
+  DPR = Math.max(1, devicePixelRatio || 1);
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W+"px";
+  canvas.style.height = H+"px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  setupColumns();
+}
+window.addEventListener("resize", resize);
+
+/* ---------------- COLUMN SETUP ---------------- */
+function setupColumns(){
+  columns = [];
+  const cols = Math.floor(W / cfg.columnSpacing);
+  const gap  = Math.floor(W / cols);
+  for(let i=0;i<cols;i++){
+    columns.push({
+      x: Math.round(i*gap + gap/2),
+      streams: [],
+      cooldown: rand(cfg.spawnMin,cfg.spawnMax)
+    });
+  }
+}
+
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+/* ---------------- STREAMS ---------------- */
+function createStream(x){
+  const chars = [];
+
+  for(const w of words){
+    if(w===""){ chars.push(""); }
+    else for(const ch of w) chars.push(ch);
+    chars.push("");
+    chars.push("");
+  }
+
+  if(Math.random() < cfg.emojiChance){
+    const n = 1+Math.floor(Math.random()*3);
+    for(let k=0;k<n;k++){
+      const pos = Math.floor(Math.random()*chars.length);
+      chars[pos] = emojis[Math.floor(Math.random()*emojis.length)];
+    }
+  }
+
+  return {
+    x,
+    y: -(60 + Math.random()*180),
+    speed: rand(cfg.speedRange[0],cfg.speedRange[1]),
+    chars
+  };
+}
+
+/* ---------------- DRAW ---------------- */
+function drawStream(S){
+  const lh = cfg.lineHeight;
+
+  for(let i=0;i<S.chars.length;i++){
+    const ch = S.chars[i];
+    if(!ch) continue;
+
+    const x = Math.round(S.x);
+    const y = Math.round(S.y + i*lh);
+    if(y < -lh || y > H+80) continue;
+
+    /* apply glow/blur */
+    ctx.shadowBlur = cfg.glowBlur;
+    ctx.shadowColor = cfg.glowColor;
+
+    if(emojis.includes(ch)){
+      ctx.font = `${Math.round(cfg.baseFont*1.36)}px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji'`;
+      ctx.fillStyle = "rgb(180,255,200)";
+    } else {
+      ctx.font = `${cfg.baseFont}px 'Segoe UI','Segoe UI Symbol'`;
+      ctx.fillStyle = "rgb(0,255,140)";
+    }
+
+    /* Set to 1.0 for fully opaque (clear) characters */
+    ctx.globalAlpha = 1.0; 
+    ctx.textBaseline = "top";
+    ctx.fillText(ch,x,y);
+
+    /* reset glow */
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+  }
+}
+
+/* ---------------- ANIMATION ---------------- */
+let last = performance.now();
+let paused = false;
+
+function tick(now){
+  const dt = Math.min(0.05,(now-last)/1000);
+  last = now;
+
+  if(!paused){
+    /* smear effect (now significantly faster clearing) */
+    ctx.fillStyle = `rgba(0,0,0,${cfg.trailAlpha})`;
+    ctx.fillRect(0,0,W,H);
+
+    for(const col of columns){
+      col.cooldown -= dt;
+      if(col.cooldown <= 0 && col.streams.length < cfg.maxStreamsPerCol){
+        col.streams.push(createStream(col.x));
+        col.cooldown = rand(cfg.spawnMin,cfg.spawnMax);
+      }
+
+      for(let i=col.streams.length-1;i>=0;i--){
+        const s = col.streams[i];
+        s.y += s.speed * dt;
+        drawStream(s);
+        if(s.y > H + 120) col.streams.splice(i,1);
+      }
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- INTERACTION ---------------- */
+window.addEventListener("click",()=>{
+  paused = !paused;
+});
+
+/* ---------------- START ---------------- */
+resize();
+ctx.fillStyle = "#000";
+ctx.fillRect(0,0,W,H);
+requestAnimationFrame(tick);
+</script>
+
+</body>
+</html>

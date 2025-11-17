@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Matrix Birthday – Pastel Cute</title>
+
+<style>
+  :root{
+    --card-bg: rgba(255,255,255,0.72);
+    --card-accent: rgba(255,255,255,0.9);
+    --glass-blur: 8px;
+    --panel-radius: 18px;
+    --shadow: 0 10px 30px rgba(0,0,0,0.08);
+    --pastel-1: #ffd6e7; /* pink */
+    --pastel-2: #e6f7ff; /* baby blue */
+    --pastel-3: #fff2d6; /* cream */
+    --pastel-4: #eaf8e6; /* mint */
+    --pastel-5: #f0e7ff; /* lavender */
+    --ui-font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Color Emoji";
+  }
+
+  html,body{
+    height:100%;
+    margin:0;
+    overflow:hidden;
+    font-family: var(--ui-font);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    background: linear-gradient(135deg, var(--pastel-1) 0%, var(--pastel-2) 30%, var(--pastel-5) 60%, var(--pastel-3) 100%);
+  }
+
+  /* full-bleed canvas */
+  canvas{ display:block; width:100vw; height:100vh; }
+
+  /* cute center card */
+  .center-panel{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.82));
+    color:#444;
+    padding:18px 28px;
+    border-radius:var(--panel-radius);
+    text-align:center;
+    z-index:30;
+    box-shadow:var(--shadow);
+    min-width:300px;
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid rgba(255,255,255,0.6);
+  }
+  .center-panel h1{
+    margin:0;
+    font-size:clamp(20px,4vw,40px);
+    font-weight:800;
+    letter-spacing:0.6px;
+    color:#2c2c2c;
+  }
+  .center-panel p{
+    margin:8px 0 0 0;
+    font-size:14px;
+    opacity:0.9;
+  }
+  .subtitle-wish{
+    margin-top:10px;
+    font-size:13px;
+    color:#666;
+  }
+
+  /* helper small footer */
+  .hint{
+    font-size:12px;
+    margin-top:10px;
+    opacity:0.85;
+  }
+
+  /* responsive */
+  @media (max-width:420px){
+    .center-panel{ padding:14px 18px; min-width:240px; }
+    .center-panel h1{ font-size:20px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="center-panel" id="centerPanel" aria-live="polite">
+  <h1 id="title">Happy Birthday</h1>
+  <p id="subtitle">Make a wish ✨</p>
+  <div class="subtitle-wish hint">Click anywhere to pause / play • URL params: <code>?message=...&name=...&date=...</code></div>
+</div>
+
+<script>
+/* ---------------- URL PARAMS ---------------- */
+function getParam(k,d=""){ try{return decodeURIComponent(new URL(location.href).searchParams.get(k)||d);}catch(_){return d;} }
+
+const msgParam  = getParam("message","Happy Birthday");
+const nameParam = getParam("name","");
+const dateParam = getParam("date","");
+
+const titleEl = document.getElementById("title");
+const subtitleEl = document.getElementById("subtitle");
+
+titleEl.textContent = msgParam + (nameParam ? " " + nameParam : "");
+
+if(dateParam){
+  const dt = new Date(dateParam);
+  subtitleEl.textContent = isNaN(dt) ? dateParam : dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+}
+
+/* ---------------- CANVAS CONFIG ---------------- */
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = true;
+
+let W = innerWidth, H = innerHeight;
+let DPR = Math.max(1, devicePixelRatio || 1);
+
+/* Pastel-friendly configuration */
+const cfg = {
+  columnSpacing: 56,
+  baseFont: 26,
+  lineHeight: 34,
+  speedRange: [50, 95],
+  trailAlpha: 0.22,      // softer pastel smear
+  glowBlur: 10,          // soft glow
+  glowColor: "rgba(255,255,255,0.05)",
+  charAlpha: 0.98,
+  emojiChance: 0.14,
+  maxStreamsPerCol: 2,
+  spawnMin: 0.36,
+  spawnMax: 1.0
+};
+
+const pastelColors = [
+  "rgba(255,166,196,0.98)", // pink
+  "rgba(200,235,255,0.98)", // baby blue
+  "rgba(240,230,255,0.98)", // lavender
+  "rgba(255,245,220,0.98)", // cream
+  "rgba(218,255,236,0.98)"  // mint
+];
+
+const emojis = ["🎉","🎂","🎈","🎁","💖","😊","✨","🥳","🌸","🍰"];
+
+/* Prepare the words to stream */
+const nameUpper = nameParam ? nameParam.toUpperCase().replace(/\s+/g,"") : "";
+
+const words = [
+  (msgParam || "HAPPY").toUpperCase(),
+  "",
+  "BIRTHDAY",
+  "",
+  nameUpper
+].filter((x,i)=> !(x==="" && i===0)); // avoid leading empty
+
+/* ---------------- RESIZE ---------------- */
+let columns = [];
+
+function resize(){
+  W = innerWidth;
+  H = innerHeight;
+  DPR = Math.max(1, devicePixelRatio || 1);
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  setupColumns();
+}
+window.addEventListener("resize", resize);
+
+/* ---------------- COLUMNS ---------------- */
+function setupColumns(){
+  columns = [];
+  const cols = Math.max(6, Math.floor(W / cfg.columnSpacing));
+  const gap  = Math.floor(W / cols);
+  for(let i=0;i<cols;i++){
+    columns.push({
+      x: Math.round(i*gap + gap/2),
+      streams: [],
+      cooldown: rand(cfg.spawnMin,cfg.spawnMax)
+    });
+  }
+}
+function rand(a,b){ return a + Math.random()*(b-a); }
+
+/* ---------------- STREAM ---------------- */
+function createStream(x){
+  const chars = [];
+  for(const w of words){
+    if(w===""){ chars.push(""); }
+    else for(const ch of w) chars.push(ch);
+    // add a small spacer after each word for nice spacing
+    chars.push("");
+    if(Math.random() < 0.25) chars.push("");
+  }
+
+  if(Math.random() < cfg.emojiChance){
+    const n = 1+Math.floor(Math.random()*3);
+    for(let k=0;k<n;k++){
+      const pos = Math.floor(Math.random()*chars.length);
+      chars[pos] = emojis[Math.floor(Math.random()*emojis.length)];
+    }
+  }
+
+  return {
+    x,
+    y: -(40 + Math.random()*180),
+    speed: rand(cfg.speedRange[0],cfg.speedRange[1]),
+    chars
+  };
+}
+
+/* ---------------- DRAWING ---------------- */
+function drawStream(S){
+  const lh = cfg.lineHeight;
+
+  for(let i=0;i<S.chars.length;i++){
+    const ch = S.chars[i];
+    if(!ch) continue;
+
+    const x = Math.round(S.x);
+    const y = Math.round(S.y + i*lh);
+    if(y < -lh || y > H+80) continue;
+
+    // drop shadow + soft pastel glow
+    ctx.shadowBlur = cfg.glowBlur;
+    ctx.shadowColor = "rgba(255,255,255,0.18)";
+
+    // choose pastel color randomly but consistent per char index for subtle variation
+    const color = pastelColors[(i + Math.floor(S.x/40)) % pastelColors.length];
+    ctx.globalAlpha = cfg.charAlpha;
+    ctx.textBaseline = "top";
+
+    if(emojis.includes(ch)){
+      ctx.font = `${Math.round(cfg.baseFont * 1.3)}px 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji'`;
+      ctx.fillStyle = color;
+    } else {
+      ctx.font = `${cfg.baseFont}px 'Segoe UI','Segoe UI Symbol', system-ui`;
+      // slightly desaturate color for text using rgba fallback
+      ctx.fillStyle = color;
+    }
+
+    // slight horizontal jitter for a playful hand-drawn feel
+    const jitter = Math.sin((S.y + i*5)/40 + (S.x%13)) * 2.2;
+    ctx.fillText(ch, x + jitter, y);
+
+    // remove glow for next draw
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+  }
+}
+
+/* ---------------- ANIMATION LOOP ---------------- */
+let last = performance.now();
+let paused = false;
+
+function tick(now){
+  const dt = Math.min(0.05,(now-last)/1000);
+  last = now;
+
+  if(!paused){
+    // soft smear with slight color blend (pastel-friendly)
+    ctx.fillStyle = `rgba(255,255,255,${cfg.trailAlpha})`;
+    ctx.fillRect(0,0,W,H);
+
+    for(const col of columns){
+      col.cooldown -= dt;
+      if(col.cooldown <= 0 && col.streams.length < cfg.maxStreamsPerCol){
+        col.streams.push(createStream(col.x));
+        col.cooldown = rand(cfg.spawnMin,cfg.spawnMax);
+      }
+
+      for(let i=col.streams.length-1;i>=0;i--){
+        const s = col.streams[i];
+        s.y += s.speed * dt;
+        drawStream(s);
+        if(s.y > H + 160) col.streams.splice(i,1);
+      }
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- INTERACTION ---------------- */
+window.addEventListener("click",()=>{
+  paused = !paused;
+  const hint = document.querySelector(".hint");
+  hint.textContent = paused ? "Paused • click to resume" : "Click anywhere to pause / play • URL params: ?message=...&name=...&date=...";
+});
+
+/* ---------------- INIT ---------------- */
+resize();
+// initial gentle fill (very light)
+ctx.fillStyle = "rgba(255,255,255,0.04)";
+ctx.fillRect(0,0,W,H);
+requestAnimationFrame(tick);
+</script>
+
+</body>
+</html>
